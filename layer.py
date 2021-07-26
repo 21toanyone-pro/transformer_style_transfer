@@ -89,7 +89,7 @@ class Decoder(nn.Module):
         #self.unfatten = nn.Unflatten(1, torch.Size([32,32,1]))
         #self.reshape =#
         self.upsample = nn.Upsample(scale_factor=2, mode='bilinear',align_corners=True)
-        self.decoder_conv_1 = nn.ConvTranspose2d(in_channels=256,out_channels=128, kernel_size=3, padding=1)
+        self.decoder_conv_1 = nn.ConvTranspose2d(in_channels=512,out_channels=128, kernel_size=3, padding=1)
         self.decoder_conv_2 = nn.ConvTranspose2d(in_channels=128,out_channels=64, kernel_size=3, padding=1)
         self.decoder_conv_3 = nn.ConvTranspose2d(in_channels=64,out_channels=3, kernel_size=3, padding=1)
 
@@ -101,6 +101,5 @@ class Decoder(nn.Module):
         z = self.upsample(z)
         z = F.relu(self.decoder_conv_3(z))
 
-        z = self.conv_out(z)
         return z
                                                                                                                                     

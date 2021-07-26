@@ -2,6 +2,7 @@ from __future__ import print_function
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.modules import loss
 from torch.nn.modules.loss import MSELoss
 import torch.optim as optim
 import torch.utils.data
@@ -34,6 +35,7 @@ from utils import weights_init
 from utils import LambdaLR
 from gan_model import STGAN
 import torchvision.models as models
+from torchvision.utils import save_image
 
 if __name__ =='__main__':
     opt = option.opt
@@ -63,7 +65,7 @@ if __name__ =='__main__':
     MSE_loss = nn.MSELoss()
 
     # optimizer & LR schedulers
-    gen_optimizer = torch.optim.Adam(model.parameters(), opt.lr, (opt.beta1, 0.999))
+    gen_optimizer = torch.optim.Adam(model.parameters(), 0.0005, (opt.beta1, 0.9999))
     lr_scheduler_D_B = torch.optim.lr_scheduler.LambdaLR(gen_optimizer, lr_lambda=LambdaLR(opt.n_epochs, opt.epoch, opt.decay_epoch).step)
 
     # Input, output setting
@@ -74,14 +76,23 @@ if __name__ =='__main__':
         for i, img in enumerate(dataloader):
             img_s, img_c = STGAN.set_input(img, device)
             gen_optimizer.zero_grad()
-            gen_data = model(img_s, img_c, tgt_mask)
-            loss_c, loss_s = vgg_encoder(img_s, img_c, gen_data)
+            gen_data = model(img_c, img_s)
+            save_image(gen_data, f'./checkpoint/gen_data/{epoch}_fake.jpg', nrow=5, normalize=True, scale_each=True)
+            ss_data = model(img_s, img_s)
+            cc_data = model(img_c, img_c)
+
+            L_id = F.mse_loss(cc_data, img_c)+F.mse_loss(ss_data, img_s)
+            #loss_cc,loss_ss = vgg_encoder(img_c, img_s, gen_data)
+            loss_c, loss_s, loss_cc = vgg_encoder(img_c, img_s, gen_data, ss_data, cc_data)
+            
             loss_c = loss_c.mean()
             loss_s = loss_s.mean()
-            loss_mse = F.mse_loss(img_c, gen_data)
-            loss_style = loss_c + loss_s + loss_mse
+            loss_cc = loss_cc.mean()
+            #loss_mse = F.mse_loss(img_c, gen_data)
+            
+            loss_style = 10*loss_c + 7*loss_s + 50*L_id + 1*loss_cc
 
             loss_style.backward()
             gen_optimizer.step()
             lr_scheduler_D_B.step()
-        print("[Epoch %d/%d] [Batch %d/%d] [D loss: %f]" %(epoch, opt.n_epochs, i % len(dataloader), len(dataloader), (loss_style)))
+        print("[Epoch %d/%d] [Batch %d/%d] [Style loss: %f]" %(epoch, opt.n_epochs, i % len(dataloader), len(dataloader), (loss_style)))

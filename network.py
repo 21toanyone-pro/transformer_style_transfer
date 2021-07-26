@@ -119,17 +119,20 @@ class Net(nn.Module):
         target_mean, target_std = calc_mean_std(target)
         return self.mse_loss(input_mean, target_mean) + \
                self.mse_loss(input_std, target_std)
+    def calc_ss_loss(self, input_s,input_c, target_s,target_c):
+        return self.mse_loss(input_c, target_c) +  self.mse_loss(input_s, target_s)
 
-    def forward(self, content_images, style_images, stylized_images):
+    def forward(self, content_images, style_images, stylized_images, ss_img, cc_img):
         style_feats = self.encode_with_intermediate(style_images)
         content_feat = self.encode(content_images)
         stylized_feats = self.encode_with_intermediate(stylized_images)
 
         loss_c = self.calc_content_loss(stylized_feats[-1], content_feat)
         loss_s = self.calc_style_loss(stylized_feats[0], style_feats[0])
+        loss_cc = self.calc_ss_loss(style_images,content_images,ss_img,cc_img)
         for i in range(1, 4):
             loss_s += self.calc_style_loss(stylized_feats[i], style_feats[i])
-        return loss_c, loss_s
+        return loss_c, loss_s, loss_cc
 
 
 class ST_Trainsformer(nn.Module):
@@ -140,9 +143,9 @@ class ST_Trainsformer(nn.Module):
         super(ST_Trainsformer, self).__init__()
 
         # Hyper-parameter setting
-        self.d_model = 64
+        self.d_model = 512
         self.patch_size = patch_size
-        #self.input_linear = nn.Linear(256, (self.bottom_width**2) * self.d_model)
+        #self.input_linear = nn.Linear(256, (selsssssf.bottom_width**2) * se.d_model)
 
         # Image embedding part(content)
         self.c_patch_embedding = PatchEmbedding(in_channels=3, patch_size=patch_size,
@@ -174,7 +177,6 @@ class ST_Trainsformer(nn.Module):
         self.trg_output_linear2 = nn.Linear(d_embedding, 1)
 
 
-
         self.CNN_Decoder = Decoder()
 
         # Initialization
@@ -182,7 +184,7 @@ class ST_Trainsformer(nn.Module):
             if p.dim() > 1:
                 nn.init.kaiming_uniform_(p) 
 
-    def forward(self, content_img: Tensor, style_img: Tensor, tgt_mask: Tensor) -> Tensor:
+    def forward(self, content_img: Tensor, style_img: Tensor) -> Tensor:
 
         # Image embedding
         S_encoder_out = self.s_patch_embedding(style_img).transpose(0, 1)
@@ -190,40 +192,23 @@ class ST_Trainsformer(nn.Module):
         C_encoder_out = self.s_patch_embedding(content_img).transpose(0, 1)
 
         # Image embedding
-
-        # Text embedding
-        #decoder_out = self.c_patch_embedding(content_img).transpose(0, 1)
-
-        #패치단위로 쪼개기
-
-        #선형 투영(Linear Projection)
+        # Transformer Encoder
+        for encoder in self.encoders:
+            C_encoder_out = encoder(C_encoder_out)
 
         # Transformer Encoder
         for encoder in self.encoders:
-            C_encoder_out = encoder(S_encoder_out)
-
-        # Transformer Encoder
-        for encoder in self.encoders:
-            S_encoder_out = encoder(C_encoder_out)
+            S_encoder_out = encoder(S_encoder_out)
 
         # Transformer Decoder
         for decoder in self.decoders:
             decoder_out = decoder(C_encoder_out, S_encoder_out)#, tgt_mask=tgt_mask,tgt_key_padding_mask=tgt_key_padding_mask)
         
-        #decoder_out = self.CNN_Decoder(decoder_out)
-        # Target linear
-        #[n,C,W,H]
-        # decoder_out = decoder_out.transpose(0, 1).contiguous()
-        # decoder_out = decoder_out.unsqueeze(0)
-        decoder_out = decoder_out.view(decoder_out.size(1),-1, self.d_model)
-        decoder_out = decoder_out.contiguous()
-        decoder_out = decoder_out.transpose(0,1)
-        #decoder_out = torch.nn.functional.fold(decoder_out.transpose(1,2).contiguous(),int(self.patch_size),self.d_model,stride=self.d_model)
-        decoder_out = self.CNN_Decoder(decoder_out)
-        #decoder_out = self.trg_output_norm(self.trg_dropout(F.gelu(self.trg_output_linear(decoder_out))))
-       # decoder_out = self.trg_output_linear2(decoder_out)
 
-        #decoder_out = self.CNN_Decoder(decoder_out)
+        decoder_out = decoder_out.permute(0, 2, 1).view(1, self.d_model, 32, 32)
+
+        decoder_out = self.CNN_Decoder(decoder_out)
+ 
 
         return decoder_out
 

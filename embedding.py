@@ -23,31 +23,23 @@ class PatchEmbedding(nn.Module):
         # Hyper-parameter setting
         self.patch_size = patch_size
 
-        self.projection= nn.Sequential(Rearrange('b c (h s1) (w s2) -> b (h w) (s1 s2 c)', s1=patch_size, s2 = patch_size),
-                    nn.Linear(patch_size * patch_size * in_channels, d_model))
+        # self.projection= nn.Sequential(Rearrange('b c (h s1) (w s2) -> b (h w) (s1 s2 c)', s1=patch_size, s2 = patch_size),
+        #             nn.Linear(patch_size * patch_size * in_channels, d_model))
         # Patch projection & parameter setting
-        # self.projection = nn.Sequential(
-        #     nn.Conv2d(in_channels, d_model, kernel_size=patch_size, stride=patch_size),
-        #     Rearrange('b e (h) (w) -> b (h w) e')
-        # )
+        self.projection = nn.Sequential(
+            nn.Conv2d(in_channels, d_model, kernel_size=patch_size, stride=patch_size),
+            Rearrange('b e (h) (w) -> b (h w) e')
+        )
         self.cls_token = nn.Parameter(torch.randn(1, 1, d_model))
-        self.positions = nn.Parameter(torch.randn((img_size // patch_size)**2 + 1, d_model))
+        self.positions = nn.Parameter(torch.randn((img_size // patch_size)**2, d_model))
 
     @autocast()
     def forward(self, x: Tensor) -> Tensor:
         b,_, _,_= x.shape
         # prepare settings
-        #batch_size = x.size(0)
         x = self.projection(x)
-        cls_tokens = repeat(self.cls_token, '() n e -> b n e', b=b)
-        # project original patch
-        #x_original = self.projection(x)
-        # prepend the cls token to the input
-        x_original = torch.cat([cls_tokens, x], dim=1)
-        # add position embedding
-        x_original += self.positions
-        # triple patch mode
-        x_out = x_original
+        x += self.positions
+        x_out = x
 
         return x_out
 
