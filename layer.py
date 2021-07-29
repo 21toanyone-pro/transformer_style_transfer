@@ -1,9 +1,24 @@
 from torch import nn
 from torch import Tensor
+import torch
 from torch.nn import functional as F
 from torch.cuda.amp.autocast_mode import autocast
 from einops import repeat
 from einops.layers.torch import Rearrange
+import math
+
+
+
+def calculate_attention(self, q, k ,v, mask):
+    d_k = k.size(-1)
+    attention_score = torch.matmul(q, k.transpose(-2,-1))
+    attention_score = attention_score/math.sqrt(d_k)
+    if mask is not None:
+        attention_score = attention_score.masked_fill(mask==0, -1e9)
+    attention_prob = F.softmax(attention_score, dim=1)
+    out = torch.matmul(attention_prob, v)
+
+    return out
 
 
 class TransformerEncoderLayer(nn.Module):
@@ -30,8 +45,7 @@ class TransformerEncoderLayer(nn.Module):
 
     @autocast()
     def forward(self, src: Tensor, src_mask: Tensor = None, src_key_padding_mask: Tensor = None) -> Tensor:
-        src2 = self.self_attn(src, src, src, attn_mask=src_mask,
-                              key_padding_mask=src_key_padding_mask)[0]
+        src2 = self.self_attn(src, src, src)[0]
         src = src + self.dropout1(src2)
         src = self.norm1(src)
         src2 = self.linear2(self.dropout(F.gelu(self.linear1(src))))
@@ -68,17 +82,16 @@ class TransformerDecoderLayer(nn.Module):
     def forward(self, tgt, memory, tgt_mask=None, memory_mask=None,
                 tgt_key_padding_mask=None, memory_key_padding_mask=None):
 
-        tgt2 = self.self_attn(tgt, tgt, tgt, attn_mask=tgt_mask,
-                              key_padding_mask=tgt_key_padding_mask)[0]
+        tgt2 = self.self_attn(tgt, memory, memory)[0]
         tgt = tgt + self.dropout1(tgt2)
         tgt = self.norm1(tgt)
-        tgt2 = self.multihead_attn(tgt, memory, memory, attn_mask=memory_mask,
-                                   key_padding_mask=memory_key_padding_mask)[0]
+        tgt2 = self.multihead_attn(tgt, memory, memory)[0]
         tgt = tgt + self.dropout2(tgt2)
         tgt = self.norm2(tgt)
         tgt2 = self.linear2(self.dropout(F.gelu(self.linear1(tgt))))
         tgt = tgt + self.dropout3(tgt2)
         tgt = self.norm3(tgt)
+
         return tgt
 
 class Decoder(nn.Module):
@@ -102,4 +115,3 @@ class Decoder(nn.Module):
         z = F.relu(self.decoder_conv_3(z))
 
         return z
-                                                                                                                                    

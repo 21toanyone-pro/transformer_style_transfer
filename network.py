@@ -1,4 +1,3 @@
-# Import PyTorch
 import torch
 from torch import nn
 from torch import Tensor
@@ -10,7 +9,7 @@ from einops.layers.torch import Rearrange
 
 # Import custom modules
 from layer import TransformerDecoderLayer, TransformerEncoderLayer, Decoder
-from embedding import PatchEmbedding
+from embedding import PatchEmbedding, MultiHeadAttention, PatchEmbedding_style
 
 def calc_mean_std(feat, eps=1e-5):
     # eps is a small value added to the variance to avoid divide-by-zero.
@@ -136,10 +135,10 @@ class Net(nn.Module):
 
 
 class ST_Trainsformer(nn.Module):
-    def __init__(self, d_model: int = 256, d_embedding: int = 256, 
-                 n_head: int = 8, dim_feedforward: int = 1024,
-                 img_size: int = 128, patch_size: int = 8, num_encoder_layer: int = 6, num_decoder_layer: int = 6,
-                 dropout: float = 0.1):
+    def __init__(self, d_model: int = 512, d_embedding: int = 256, 
+                 n_head: int = 8, dim_feedforward: int = 2048,
+                 img_size: int = 128, patch_size: int = 8, num_encoder_layer: int = 8, num_decoder_layer: int = 8,
+                 dropout: float = 0.1,**kwargs):
         super(ST_Trainsformer, self).__init__()
 
         # Hyper-parameter setting
@@ -151,30 +150,30 @@ class ST_Trainsformer(nn.Module):
         self.c_patch_embedding = PatchEmbedding(in_channels=3, patch_size=patch_size,
             d_model=d_model, img_size=img_size)
 
+        
+
         # Image embedding part(style)
-        self.s_patch_embedding = PatchEmbedding(in_channels=3, patch_size=patch_size,
+        self.s_patch_embedding = PatchEmbedding_style(in_channels=3, patch_size=patch_size,
             d_model=d_model, img_size=img_size)
+        
+
+
 
         # Transformer Encoder part # d_model = 512, dim_feed =512
         self_attn = MultiheadAttention(d_model, n_head, dropout=dropout)
+
+        #self_attn = MultiHeadAttention(d_model)
         self.encoders = nn.ModuleList([
             TransformerEncoderLayer(d_model, self_attn, dim_feedforward, dropout=dropout) \
                 for i in range(num_encoder_layer)])
 
         # Transformer Decoder part
         self_attn = MultiheadAttention(d_model, n_head, dropout=dropout)
+        #self_attn = MultiHeadAttention(d_model)
         decoder_mask_attn = MultiheadAttention(d_model, n_head, dropout=dropout)
         self.decoders = nn.ModuleList([
             TransformerDecoderLayer(d_model, self_attn, decoder_mask_attn,
                 dim_feedforward, dropout=dropout) for i in range(num_decoder_layer)])
-
-        #self.reshape = nn.View(1, 64, 512, 512)
-        #self.deconv = nn.Conv2d(1024//64, 3,1,1,0)
-        # Target linear part
-        self.trg_dropout = nn.Dropout(dropout)
-        self.trg_output_linear = nn.Linear(d_model, d_embedding)
-        self.trg_output_norm = nn.LayerNorm(d_embedding, eps=1e-12)
-        self.trg_output_linear2 = nn.Linear(d_embedding, 1)
 
 
         self.CNN_Decoder = Decoder()
@@ -189,7 +188,7 @@ class ST_Trainsformer(nn.Module):
         # Image embedding
         S_encoder_out = self.s_patch_embedding(style_img).transpose(0, 1)
 
-        C_encoder_out = self.s_patch_embedding(content_img).transpose(0, 1)
+        C_encoder_out = self.c_patch_embedding(content_img).transpose(0, 1)
 
         # Image embedding
         # Transformer Encoder
@@ -203,9 +202,8 @@ class ST_Trainsformer(nn.Module):
         # Transformer Decoder
         for decoder in self.decoders:
             decoder_out = decoder(C_encoder_out, S_encoder_out)#, tgt_mask=tgt_mask,tgt_key_padding_mask=tgt_key_padding_mask)
-        
-
-        decoder_out = decoder_out.permute(0, 2, 1).view(1, self.d_model, 32, 32)
+        batch = len(decoder_out[1])
+        decoder_out = decoder_out.permute(0, 2, 1).reshape(batch, self.d_model, 16, 16)
 
         decoder_out = self.CNN_Decoder(decoder_out)
  

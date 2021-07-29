@@ -65,19 +65,21 @@ if __name__ =='__main__':
     MSE_loss = nn.MSELoss()
 
     # optimizer & LR schedulers
-    gen_optimizer = torch.optim.Adam(model.parameters(), 0.0005, (opt.beta1, 0.9999))
+    gen_optimizer = torch.optim.Adam(model.parameters(), lr= 0.0005)
     lr_scheduler_D_B = torch.optim.lr_scheduler.LambdaLR(gen_optimizer, lr_lambda=LambdaLR(opt.n_epochs, opt.epoch, opt.decay_epoch).step)
 
-    # Input, output setting
+    # Input, output setting`
     for epoch in range(0, opt.n_epochs):
         model.train()
         tgt_mask = model.generate_square_subsequent_mask(opt.max_len - 1, device)
 
         for i, img in enumerate(dataloader):
             img_s, img_c = STGAN.set_input(img, device)
+            save_image(img_s, f'./checkpoint/gen_data/{epoch}_cc.jpg', nrow=4, normalize=True, scale_each=True)
+            save_image(img_c, f'./checkpoint/gen_data/{epoch}_ss.jpg', nrow=4, normalize=True, scale_each=True)
             gen_optimizer.zero_grad()
             gen_data = model(img_c, img_s)
-            save_image(gen_data, f'./checkpoint/gen_data/{epoch}_fake.jpg', nrow=5, normalize=True, scale_each=True)
+            save_image(gen_data, f'./checkpoint/gen_data/{epoch}_fake.jpg', nrow=4, normalize=True, scale_each=True)
             ss_data = model(img_s, img_s)
             cc_data = model(img_c, img_c)
 
@@ -95,4 +97,5 @@ if __name__ =='__main__':
             loss_style.backward()
             gen_optimizer.step()
             lr_scheduler_D_B.step()
+            
         print("[Epoch %d/%d] [Batch %d/%d] [Style loss: %f]" %(epoch, opt.n_epochs, i % len(dataloader), len(dataloader), (loss_style)))
